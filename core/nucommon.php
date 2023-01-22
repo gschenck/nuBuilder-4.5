@@ -346,10 +346,20 @@ function nuSetHashList($p){
 function nuRunReport($report_id){
 
 	$id									= nuID();
-	$s									= "SELECT sre_zzzzsys_php_id, sre_code, sre_description, sre_layout FROM zzzzsys_report WHERE sre_code = '$report_id'";
-	$t									= nuRunQuery($s);
+	$s									= "SELECT zzzzsys_report_id, sre_zzzzsys_php_id, sre_code, sre_description, sre_layout FROM zzzzsys_report WHERE sre_code = ?";
+	$t									= nuRunQuery($s, array($report_id));
 	$ob									= db_fetch_object($t);
-	$_POST['nuHash']['code']			= $ob->sre_code;
+
+	$nuCode								= $ob->sre_code;
+	$phpId								= $ob->zzzzsys_report_id;
+
+	$accessList	= nuReportAccessList(nuAllowedActivities());
+	if(!nuGlobalAccess() && !in_array($phpId, $accessList)) {
+		nuDisplayError(nuTranslate("Access To Report Denied...")." ($nuCode)");
+		return null;
+	}
+
+	$_POST['nuHash']['code']			= $nuCode;
 	$_POST['nuHash']['description']		= $ob->sre_description;
 	unset($_POST['nuHash']['pages']);
 	$_POST['nuHash']['sre_layout']		= nuReplaceHashVariables($ob->sre_layout);
@@ -378,9 +388,6 @@ function nuRunPHPHidden($nuCode){
 }
 
 function nuRunPHP($nuCode, $hidden = false){
-										 
-					  
-																														  
 
 	if ($nuCode != 'nukeepalive') {
 								   
@@ -436,19 +443,8 @@ function nuRunPHP($nuCode, $hidden = false){
 		$id									= nuID();
 		nuSetJSONData($id, $json);
 		return $id;
-		  
-									   
-																											
-							   
-		 
-																			  
-	
-   
 
 	}
-
-					 
-			 
 
 		   
 }
@@ -653,7 +649,8 @@ function nuReplaceHashVariables($s){
 
 	foreach ($a as $k => $v) {
 
-		 if(!is_object ($a[$k]) && !is_array ($a[$k]) && $v != null) {
+		 if(!is_object ($a[$k]) && !is_array ($a[$k]) ) {
+			$v = $v == null ? '' : $v; 
 			$s	= str_replace ('#' . $k . '#', $v, $s);
 		}
 
@@ -965,6 +962,7 @@ function nuAddFormatting($v, $f){
 
 	if($f[0] == 'N'){												//-- number  '456.789','N|€ 1,000.00'
 		$CF				= nuGetNumberFormat(substr($f,2));			//-- CF[0]=sign, CF[1]=separator, CF[2]=decimal, CF[3]=places
+				
 		$nf				= number_format ($v , $CF[3] , $CF[2] , $CF[1]);
 		$nm				= str_replace('-', '', $nf);
 
@@ -978,9 +976,9 @@ function nuAddFormatting($v, $f){
 
 		$split	= explode(' ', $v);
 		$d		= explode('-', $split[0]);
-		$t		= explode(':', $split[1]);
+		$t		= count($split) > 1 ? explode(':', $split[1]) : '';
 
-		if($t[0] == ''){
+		if($t == '' || $t[0] == ''){
 			$t	= array(0, 0, 0);
 		}
 
@@ -2127,17 +2125,19 @@ function nuGetProperty($p, $a = null) {
 function nuSetProperty($i, $nj, $global = false) {
 
 	if ($global) {
-		$s = "SELECT sss_hashcookies FROM zzzzsys_session WHERE zzzzsys_session_id = ? ";
+		$s = "SELECT IFNULL(sss_hashcookies,'') AS sss_hashcookies FROM zzzzsys_session WHERE zzzzsys_session_id = ? ";
 		$t = nuRunQuery($s, array($_SESSION['nubuilder_session_data']['SESSION_ID']));
 
-		$r = db_fetch_object($t);
-		$j = json_decode($r->sss_hashcookies, true);
+		if (db_num_rows($t) == 1) {
+			$r = db_fetch_object($t);
+			$j = json_decode($r->sss_hashcookies, true);
 
-		$j[$i] = $nj;
+			$j[$i] = $nj;
 
-		$J = json_encode($j);
-		$s = "UPDATE zzzzsys_session SET sss_hashcookies = ? WHERE zzzzsys_session_id = ? ";
-		$t = nuRunQuery($s, array($J, $_SESSION['nubuilder_session_data']['SESSION_ID']));
+			$J = json_encode($j);
+			$s = "UPDATE zzzzsys_session SET sss_hashcookies = ? WHERE zzzzsys_session_id = ? ";
+			$t = nuRunQuery($s, array($J, $_SESSION['nubuilder_session_data']['SESSION_ID']));
+		}
 	} else {
 		$_POST['nuHash'][$i] = $nj;
 	}
@@ -2170,7 +2170,7 @@ function nuSetGlobalPropertiesJS() {
 		$js .= "nuSetProperty('". $p ."','" . addslashes($v) ."');\n";
 	}
 
-	if ($js != '') nuAddJavascript($js);
+	if ($js != '') nuAddJavaScript($js);
 
 }
 
@@ -2222,7 +2222,7 @@ function nuSanitizeFilename($file) {
 
 function nuGetEmailTemplateData($code, $language = '', $group = '') {
 
-    $sql = "
+	$sql = "
 			SELECT
 				`zzzzsys_email_template_id`,
 				`emt_form_id`,
